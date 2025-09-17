@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "Sample Main Road", "type": "Main Road", "description": "Placeholder Main Road feature"}, "geometry": {"type": "LineString", "coordinates": [[-0.8631169999999999, 9.433011], [-0.862517, 9.433610999999999]]}}]}

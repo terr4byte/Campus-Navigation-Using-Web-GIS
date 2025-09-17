@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "Sample Business Points", "type": "Business Points", "description": "Placeholder Business Points feature"}, "geometry": {"type": "Point", "coordinates": [-0.864817, 9.432311]}}]}

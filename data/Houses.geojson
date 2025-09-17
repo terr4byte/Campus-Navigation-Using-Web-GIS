@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "Sample Houses", "type": "Houses", "description": "Placeholder Houses feature"}, "geometry": {"type": "Point", "coordinates": [-0.863817, 9.433311]}}]}

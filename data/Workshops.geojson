@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "Sample Workshops", "type": "Workshops", "description": "Placeholder Workshops feature"}, "geometry": {"type": "Point", "coordinates": [-0.864817, 9.435311]}}]}

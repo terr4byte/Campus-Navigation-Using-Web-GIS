@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "Sample Trees", "type": "Trees", "description": "Placeholder Trees feature"}, "geometry": {"type": "Point", "coordinates": [-0.865817, 9.435311]}}]}

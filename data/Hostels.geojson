@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "Sample Hostels", "type": "Hostels", "description": "Placeholder Hostels feature"}, "geometry": {"type": "Point", "coordinates": [-0.864817, 9.433311]}}]}
