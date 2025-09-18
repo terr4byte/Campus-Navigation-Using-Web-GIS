@@ -55,8 +55,8 @@ function iconFor(name) {
   if (/Houses?/i.test(name))       return "🏠";
   if (/Main Road/i.test(name))     return "🛣️";
   if (/Road/i.test(name))          return "🛣️";
-  if (/Parks?/i.test(name))        return "🌳";
-  if (/Courts?/i.test(name))       return "🌳";
+  if (/Parks?/i.test(name))        return "🏟️";
+  if (/Courts?/i.test(name))       return "🏟️";
   if (/Paths?/i.test(name))        return "🚶";
   if (/Dormitories?/i.test(name))  return "🏫";
   if (/Teachers Quarters?/i.test(name)) return "🏘️";
@@ -98,8 +98,11 @@ function addLayerToggle(displayName, groupLayer) {
   const left = document.createElement('div');
   left.className = 'd-flex align-items-center gap-2';
 
+  // Creating the checkboxes and their event listeners as "cb"
   const cb = document.createElement('input');
-  cb.type = 'checkbox'; cb.checked = true; cb.className = 'form-check-input me-2';
+  cb.type = 'checkbox';
+  cb.checked = true;
+  cb.className = 'form-check-input me-2';
   cb.addEventListener('change', (e) => {
     if (e.target.checked) { map.addLayer(groupLayer); }
     else { map.removeLayer(groupLayer); }
@@ -127,6 +130,34 @@ function addLayerToggle(displayName, groupLayer) {
   layerListDiv.appendChild(item);
 }
 
+// function loadOneLayer(cfg) {
+//   return fetch(encodeURI(cfg.file))
+//     .then(r => r.json())
+//     .then(geo => {
+//       const style = styleFor(cfg.display);
+//       const gj = L.geoJSON(geo, {
+//         style,
+//         onEachFeature: (f, layer) => { layer.bindPopup(featurePopupHTML(f, cfg.display)); },
+//         pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 6, color: style.color || '#0ea5e9', weight: 1, fillOpacity: 0.85 })
+//       });
+
+//       if (/Boundary/i.test(cfg.display)) boundaryLayer = gj;
+//       if (/Path/i.test(cfg.display)) pathsLayer = gj;
+
+//       gj.addTo(map);
+//       overlays[cfg.display] = gj;
+//       addLayerToggle(cfg.display, gj);
+//       searchLayers.push(gj);
+//     })
+//     .catch(err => {
+//       console.error("Failed to load", cfg.file, err);
+//       const warn = document.createElement('div');
+//       warn.className = 'list-group-item text-danger';
+//       warn.textContent = `Missing or invalid: ${cfg.display}`;
+//       layerListDiv.appendChild(warn);
+//     });
+// }
+
 function loadOneLayer(cfg) {
   return fetch(encodeURI(cfg.file))
     .then(r => r.json())
@@ -141,18 +172,15 @@ function loadOneLayer(cfg) {
       if (/Boundary/i.test(cfg.display)) boundaryLayer = gj;
       if (/Path/i.test(cfg.display)) pathsLayer = gj;
 
-      gj.addTo(map);
+      // Only add to map if not "Trees"
+      const checked = cfg.display !== "Trees";
+      if (checked) gj.addTo(map);
+
       overlays[cfg.display] = gj;
-      addLayerToggle(cfg.display, gj);
+      addLayerToggle(cfg.display, gj, checked); // Pass checked state
       searchLayers.push(gj);
     })
-    .catch(err => {
-      console.error("Failed to load", cfg.file, err);
-      const warn = document.createElement('div');
-      warn.className = 'list-group-item text-danger';
-      warn.textContent = `Missing or invalid: ${cfg.display}`;
-      layerListDiv.appendChild(warn);
-    });
+    // ...existing code...
 }
 
 // Promise.all(presentLayers.map(loadOneLayer)).then(() => {
