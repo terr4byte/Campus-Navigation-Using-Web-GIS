@@ -243,10 +243,21 @@ document.getElementById('btn-print').addEventListener('click', () => window.prin
 // ============ Directions (Dijkstra over Paths endpoints) ============
 let routeLayer = null;
 let pickState = null; // 'from' | 'to'
+let pickOverlayLayer = null;
+let pickOverlayLabels = [];
+let pickCallback = null;
 const fromInput = document.getElementById('dir-from');
 const toInput   = document.getElementById('dir-to');
-document.getElementById('pick-from').addEventListener('click', () => { pickState = 'from'; });
-document.getElementById('pick-to').addEventListener('click', () => { pickState = 'to'; });
+document.getElementById('pick-from').addEventListener('click', () => {
+  enterPickMode(fromInput, (layer, name, center) => {
+    fromInput.value = name;
+  });
+});
+document.getElementById('pick-to').addEventListener('click', () => {
+  enterPickMode(toInput, (layer, name, center) => {
+    toInput.value = name;
+  });
+});
 map.on('click', (e) => {
   if (!pickState) return;
   const latlng = e.latlng;
@@ -255,11 +266,16 @@ map.on('click', (e) => {
   else toInput.value = txt;
   pickState = null;
 });
+map.on('click', () => {
+  if (pickState) exitPickMode();
+});
+
 
 document.getElementById('btn-clear-route').addEventListener('click', () => {
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
 });
 
+// ...existing code...
 document.getElementById('btn-route').addEventListener('click', async () => {
   if (!pathsLayer) return alert('Paths layer not loaded. Ensure Paths.geojson is present.');
   const start = await resolvePlace(fromInput.value);
@@ -272,12 +288,86 @@ document.getElementById('btn-route').addEventListener('click', async () => {
   const path = dijkstra(graph, startNode.key, endNode.key);
   if (!path || path.length < 2) return alert('No route found on the Paths network.');
 
-  // Build a polyline from the path coordinates
-  const latlngs = path.map(k => graph.nodes[k]);
+  // Build a polyline from the feature to the nearest path, then the path, then to the destination
+  const latlngs = [];
+  if (!start.equals(graph.nodes[startNode.key])) latlngs.push(start, graph.nodes[startNode.key]);
+  else latlngs.push(graph.nodes[startNode.key]);
+  for (let i = 1; i < path.length - 1; i++) latlngs.push(graph.nodes[path[i]]);
+  if (!end.equals(graph.nodes[endNode.key])) latlngs.push(graph.nodes[endNode.key], end);
+  else latlngs.push(graph.nodes[endNode.key]);
+
   if (routeLayer) map.removeLayer(routeLayer);
   routeLayer = L.polyline(latlngs, { className: 'route-line', weight: 6, opacity: 0.9 }).addTo(map);
-  map.fitBounds(routeLayer.getBounds().pad(0.2));
+  map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
 });
+
+// ============ Pick mode for selecting places on map ============
+
+//   // Build a polyline from the path coordinates
+//   const latlngs = path.map(k => graph.nodes[k]);
+//   if (routeLayer) map.removeLayer(routeLayer);
+//   routeLayer = L.polyline(latlngs, { className: 'route-line', weight: 6, opacity: 0.9 }).addTo(map);
+//   map.fitBounds(routeLayer.getBounds().pad(0.2));
+// });
+
+  // =========== Pick mode for selecting places on map ============
+// Usage: enterPickMode(inputElement, callback)
+// callback(layer, name, latlng)
+
+function enterPickMode(inputElem, callback) {
+  pickState = inputElem;
+  pickCallback = callback;
+  document.getElementById('map').classList.add('pick-mode');
+
+  // Remove any previous overlays
+  if (pickOverlayLayer) map.removeLayer(pickOverlayLayer);
+  pickOverlayLabels.forEach(l => map.removeLayer(l));
+  pickOverlayLabels = [];
+
+  // Show all features with labels
+  pickOverlayLayer = L.layerGroup();
+  for (const key in overlays) {
+    overlays[key].eachLayer(layer => {
+      // Only pickable features (not lines/paths)
+      if (layer.getLatLng || layer.getBounds) {
+        let center = layer.getLatLng ? layer.getLatLng() : layer.getBounds().getCenter();
+        let name = (layer.feature && (layer.feature.properties.name || layer.feature.properties.Name)) || key;
+        // Add a transparent marker for picking
+        const marker = L.circleMarker(center, {radius: 18, color: '#0ea5e9', fillOpacity: 0.01, weight: 2, opacity: 0.2})
+          .on('click', (e) => {
+            exitPickMode();
+            inputElem.value = name;
+            if (pickCallback) pickCallback(layer, name, center);
+          });
+        pickOverlayLayer.addLayer(marker);
+
+        // Add label
+        const label = L.marker(center, {
+          icon: L.divIcon({
+            className: 'pick-label',
+            html: name,
+            iconAnchor: [0, 0]
+          }),
+          interactive: false
+        });
+        pickOverlayLabels.push(label);
+        pickOverlayLayer.addLayer(label);
+      }
+    });
+  }
+  pickOverlayLayer.addTo(map);
+}
+
+function exitPickMode() {
+  document.getElementById('map').classList.remove('pick-mode');
+  if (pickOverlayLayer) map.removeLayer(pickOverlayLayer);
+  pickOverlayLabels.forEach(l => map.removeLayer(l));
+  pickOverlayLabels = [];
+  pickOverlayLayer = null;
+  pickState = null;
+  pickCallback = null;
+}
+
 
 // Resolve a place name or "lat,lng" to a LatLng
 async function resolvePlace(text) {
@@ -417,3 +507,5 @@ function populatePlacesList() {
     dl.appendChild(opt);
   });
 }
+
+
