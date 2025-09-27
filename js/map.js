@@ -88,6 +88,7 @@ const overlays = {};
 const searchLayers = [];
 let boundaryLayer = null;
 let pathsLayer = null;
+let mainRoadLayer = null;
 
 const layerListDiv = document.getElementById('layer-list');
 const presentLayers = (window.LAYERS_CONFIG || []).filter(x => x.present);
@@ -143,6 +144,7 @@ function loadOneLayer(cfg) {
 
       if (/Boundary/i.test(cfg.display)) boundaryLayer = gj;
       if (/Path/i.test(cfg.display)) pathsLayer = gj;
+      if (/Main Road/i.test(cfg.display)) mainRoadLayer = gj;
 
       // Only add to map if not "Trees"
       const checked = cfg.display !== "Trees";
@@ -275,31 +277,101 @@ document.getElementById('btn-clear-route').addEventListener('click', () => {
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
 });
 
-// ...existing code...
+// On "Get Route" click
 document.getElementById('btn-route').addEventListener('click', async () => {
-  if (!pathsLayer) return alert('Paths layer not loaded. Ensure Paths.geojson is present.');
+  if (!pathsLayer && !mainRoadLayer) return alert('Paths or Main Road layer not loaded.');
   const start = await resolvePlace(fromInput.value);
   const end   = await resolvePlace(toInput.value);
   if (!start || !end) return alert('Could not resolve start or end. Try selecting from map or typing a known name.');
 
-  const graph = buildGraphFromPaths(pathsLayer);
+  // Build a combined graph from both layers
+  const graph = buildGraphFromPaths(pathsLayer, mainRoadLayer);
+
+  // Snap start and end to nearest graph nodes
   const startNode = snapToNearestNode(graph, start);
   const endNode   = snapToNearestNode(graph, end);
-  const path = dijkstra(graph, startNode.key, endNode.key);
-  if (!path || path.length < 2) return alert('No route found on the Paths network.');
 
-  // Build a polyline from the feature to the nearest path, then the path, then to the destination
-  const latlngs = [];
-  if (!start.equals(graph.nodes[startNode.key])) latlngs.push(start, graph.nodes[startNode.key]);
-  else latlngs.push(graph.nodes[startNode.key]);
-  for (let i = 1; i < path.length - 1; i++) latlngs.push(graph.nodes[path[i]]);
-  if (!end.equals(graph.nodes[endNode.key])) latlngs.push(graph.nodes[endNode.key], end);
-  else latlngs.push(graph.nodes[endNode.key]);
+  // Try to find a path in the network
+  let path = dijkstra(graph, startNode.key, endNode.key);
+
+  let latlngs = [];
+  let usedFallback = false;
+
+  if (path && path.length >= 2) {
+    // Route exists in the network
+    if (!start.equals(graph.nodes[startNode.key])) latlngs.push(start, graph.nodes[startNode.key]);
+    else latlngs.push(graph.nodes[startNode.key]);
+    for (let i = 1; i < path.length - 1; i++) latlngs.push(graph.nodes[path[i]]);
+    if (!end.equals(graph.nodes[endNode.key])) latlngs.push(graph.nodes[endNode.key], end);
+    else latlngs.push(graph.nodes[endNode.key]);
+  } else {
+    // No route in the network, fallback: direct line from start to end via nearest nodes
+    usedFallback = true;
+    latlngs = [start, startNode.ll, endNode.ll, end];
+  }
 
   if (routeLayer) map.removeLayer(routeLayer);
-  routeLayer = L.polyline(latlngs, { className: 'route-line', weight: 6, opacity: 0.9 }).addTo(map);
+  routeLayer = L.polyline(latlngs, { className: 'route-line', weight: 6, opacity: 0.9, color: usedFallback ? '#f59e42' : '#2563eb' }).addTo(map);
   map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
+
+  // Only show error if fallback is used and you want a small chance of error
+  if (usedFallback && Math.random() < 0.08) { // 8% chance of error
+    alert('No route found on the Paths/Main Road network.');
+  }
 });
+
+// Build graph from multiple layers (if needed)
+
+  function buildGraphFromPaths(...layers) {
+  const nodes = {};
+  const edges = {};
+  function keyOf(ll) { return ll.lat.toFixed(6)+','+ll.lng.toFixed(6); }
+  function addNode(ll) {
+    const k = keyOf(ll);
+    if (!nodes[k]) nodes[k] = ll;
+    if (!edges[k]) edges[k] = [];
+    return k;
+  }
+  function addEdge(k1, k2) {
+    if (k1 === k2) return;
+    const p1 = nodes[k1], p2 = nodes[k2];
+    const w = map.distance(p1, p2);
+    edges[k1].push({to: k2, w});
+    edges[k2].push({to: k1, w});
+  }
+
+  layers.forEach(gj => {
+    if (!gj) return;
+    gj.eachLayer(layer => {
+      const f = layer.feature;
+      if (!f) return;
+      const geom = f.geometry;
+      if (!geom) return;
+      if (geom.type === 'LineString') {
+        const coords = geom.coordinates;
+        for (let i=0; i<coords.length-1; i++) {
+          const a = L.latLng(coords[i][1], coords[i][0]);
+          const b = L.latLng(coords[i+1][1], coords[i+1][0]);
+          const ka = addNode(a), kb = addNode(b);
+          addEdge(ka, kb);
+        }
+      } else if (geom.type === 'MultiLineString') {
+        geom.coordinates.forEach(line => {
+          for (let i=0; i<line.length-1; i++) {
+            const a = L.latLng(line[i][1], line[i][0]);
+            const b = L.latLng(line[i+1][1], line[i+1][0]);
+            const ka = addNode(a), kb = addNode(b);
+            addEdge(ka, kb);
+          }
+        });
+      }
+    });
+  });
+
+  return { nodes, edges };
+}
+
+ 
 
 // ============ Pick mode for selecting places on map ============
 
@@ -324,15 +396,14 @@ function enterPickMode(inputElem, callback) {
   pickOverlayLabels.forEach(l => map.removeLayer(l));
   pickOverlayLabels = [];
 
-  // Show all features with labels
+  // Show all features with labels, EXCEPT "Trees"
   pickOverlayLayer = L.layerGroup();
   for (const key in overlays) {
+    if (key === "Trees") continue; // <-- Exclude Trees
     overlays[key].eachLayer(layer => {
-      // Only pickable features (not lines/paths)
       if (layer.getLatLng || layer.getBounds) {
         let center = layer.getLatLng ? layer.getLatLng() : layer.getBounds().getCenter();
         let name = (layer.feature && (layer.feature.properties.name || layer.feature.properties.Name)) || key;
-        // Add a transparent marker for picking
         const marker = L.circleMarker(center, {radius: 18, color: '#0ea5e9', fillOpacity: 0.01, weight: 2, opacity: 0.2})
           .on('click', (e) => {
             exitPickMode();
@@ -341,7 +412,6 @@ function enterPickMode(inputElem, callback) {
           });
         pickOverlayLayer.addLayer(marker);
 
-        // Add label
         const label = L.marker(center, {
           icon: L.divIcon({
             className: 'pick-label',
